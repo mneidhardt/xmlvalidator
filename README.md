@@ -1,6 +1,7 @@
 # xmlvalidator
 Sax based xml validation
-I needed a SAX based validator, and found it in (I think) Apache Xerces.
+
+I needed a SAX based validator, and found it in (as far as I remember) Apache Xerces.
 
 I didn't make this, I just made a few small changes, primarily by adding this line:
 
