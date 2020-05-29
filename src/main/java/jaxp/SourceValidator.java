@@ -1,4 +1,9 @@
 /*
+          *** NB: I have made a few minor changes, 
+          Set this.maxerrors in constructor, and:
+          System.setProperty("jdk.xml.maxOccurLimit", "99999");
+          *** ---------------------- ***
+
  * Licensed to the Apache Software Foundation (ASF) under one or more
  * contributor license agreements.  See the NOTICE file distributed with
  * this work for additional information regarding copyright ownership.
@@ -100,7 +105,10 @@ public class SourceValidator
     
     /** Default repetition (1). */
     protected static final int DEFAULT_REPETITION = 1;
-    
+
+    /** Default maxerror count. */
+    protected static final long DEFAULT_MAXERRORS = 1000;
+
     /** Default validation source. */
     protected static final String DEFAULT_VALIDATION_SOURCE = "sax";
     
@@ -118,7 +126,10 @@ public class SourceValidator
     
     /** Default memory usage report (false). */
     protected static final boolean DEFAULT_MEMORY_USAGE = false;
-    
+
+    private long maxerrors;
+    private long errorcount=0;
+
     //
     // Data
     //
@@ -131,8 +142,15 @@ public class SourceValidator
 
     /** Default constructor. */
     public SourceValidator() {
+    	this.maxerrors = DEFAULT_MAXERRORS;
     } // <init>()
     
+    /** Default constructor. */
+    public SourceValidator(long maxerrors) {
+    	this.maxerrors = maxerrors;
+    } // <init>()
+    
+  
     //
     // Public methods
     //
@@ -146,6 +164,11 @@ public class SourceValidator
             for (int j = 0; j < repetitions; ++j) {
                 validator.validate(source);
             }
+            
+            if (errorcount > 0) {
+            	throw new SAXParseException("Errors encountered.", "", "", 0,0);
+            }
+
             long memoryAfter = Runtime.getRuntime().freeMemory();
             long timeAfter = System.currentTimeMillis();
 
@@ -154,12 +177,10 @@ public class SourceValidator
                         ? memoryBefore - memoryAfter : Long.MIN_VALUE;
             printResults(fOut, systemId, time, memory, repetitions);
         }
-        catch (SAXParseException e) {
-            // ignore
-        }
         catch (Exception e) {
-            System.err.println("error: Parse error occurred - "+e.getMessage());
-            Exception se = e;
+            System.err.println("Fail. " + e.getMessage());
+            System.exit(1);
+            /*Exception se = e;
             if (e instanceof SAXException) {
                 se = ((SAXException)e).getException();
             }
@@ -167,7 +188,7 @@ public class SourceValidator
               se.printStackTrace(System.err);
             else
               e.printStackTrace(System.err);
-
+            */
         }
     } // validate(Validator,Source,String,int,boolean)
     
@@ -213,7 +234,7 @@ public class SourceValidator
                              long memory, int repetition) {
         
         // filename.xml: 631 ms
-        out.print(uri);
+        out.print("OK: " + uri);
         out.print(": ");
         if (repetition == 1) {
             out.print(time);
@@ -247,11 +268,16 @@ public class SourceValidator
 
     /** Error. */
     public void error(SAXParseException ex) throws SAXException {
-        printError("Error", ex);
+    	++errorcount;
+        printError("Error ", ex);
+        if (maxerrors > -1 && errorcount >= maxerrors) {
+        	throw ex;
+        }
     } // error(SAXParseException)
 
     /** Fatal error. */
     public void fatalError(SAXParseException ex) throws SAXException {
+    	++errorcount;
         printError("Fatal Error", ex);
         throw ex;
     } // fatalError(SAXParseException)
@@ -265,7 +291,7 @@ public class SourceValidator
 
         System.err.print("[");
         System.err.print(type);
-        System.err.print("] ");
+        System.err.print("]");
         String systemId = ex.getSystemId();
         if (systemId != null) {
             int index = systemId.lastIndexOf('/');
@@ -297,6 +323,8 @@ public class SourceValidator
             System.exit(1);
         }
         
+        System.setProperty("jdk.xml.maxOccurLimit", "99999");
+        
         // variables
         Vector schemas = null;
         Vector instances = null;
@@ -308,6 +336,7 @@ public class SourceValidator
         boolean validateAnnotations = DEFAULT_VALIDATE_ANNOTATIONS;
         boolean generateSyntheticAnnotations = DEFAULT_GENERATE_SYNTHETIC_ANNOTATIONS;
         boolean memoryUsage = DEFAULT_MEMORY_USAGE;
+        long maxerrors = DEFAULT_MAXERRORS;
         
         // process arguments
         for (int i = 0; i < argv.length; ++i) {
@@ -337,6 +366,25 @@ public class SourceValidator
                             continue;
                         }
                         repetition = value;
+                    }
+                    catch (NumberFormatException e) {
+                        System.err.println("error: invalid number ("+number+").");
+                    }
+                    continue;
+                }
+                if (option.equals("e")) {
+                    if (++i == argv.length) {
+                        System.err.println("error: Missing argument to -e option. Using default = " + DEFAULT_MAXERRORS);
+                        continue;
+                    }
+                    String number = argv[i];
+                    try {
+                        long value = Long.parseLong(number);
+                        if (value < 1) {
+                            System.err.println("error: Max error count must be at least 1.");
+                            continue;
+                        }
+                        maxerrors = value;
                     }
                     catch (NumberFormatException e) {
                         System.err.println("error: invalid number ("+number+").");
@@ -407,7 +455,7 @@ public class SourceValidator
         
         try {
             // Create new instance of SourceValidator.
-            SourceValidator sourceValidator = new SourceValidator();
+            SourceValidator sourceValidator = new SourceValidator(maxerrors);
             
             // Create SchemaFactory and configure
             SchemaFactory factory = SchemaFactory.newInstance(schemaLanguage);
@@ -583,6 +631,7 @@ public class SourceValidator
         System.err.println("options:");
         System.err.println("  -l name     Select schema language by name.");
         System.err.println("  -x number   Select number of repetitions.");
+        System.err.println("  -e number   Abort after number of errors.");
         System.err.println("  -a uri ...  Provide a list of schema documents");
         System.err.println("  -i uri ...  Provide a list of instance documents to validate");
         System.err.println("  -vs source  Select validation source (sax|dom|stax|stream)");
@@ -601,6 +650,7 @@ public class SourceValidator
         System.err.println("defaults:");
         System.err.println("  Schema language:                 " + DEFAULT_SCHEMA_LANGUAGE);
         System.err.println("  Repetition:                      " + DEFAULT_REPETITION);
+        System.err.println("  Max number of errors:            " + DEFAULT_MAXERRORS);
         System.err.println("  Validation source:               " + DEFAULT_VALIDATION_SOURCE);
         System.err.print("  Schema full checking:            ");
         System.err.println(DEFAULT_SCHEMA_FULL_CHECKING ? "on" : "off");
